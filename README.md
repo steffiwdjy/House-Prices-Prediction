@@ -1,5 +1,11 @@
 # House Prices Prediction
 
+**Description of the file:**
+- dataset : dataset
+- 01.html : the output of Rmd file
+- 01.Rmd : the code  in R Language Programming and the documentation
+- 01.Rmd : Presentation
+
 ### Introduction
 When asked to describe their dream home, potential homebuyers might not mention ceiling heights, basements, or proximity to public transportation. However, the price is likely a significant factor in their considerations.
 
