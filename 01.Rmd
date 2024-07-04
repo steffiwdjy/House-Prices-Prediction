@@ -1,0 +1,417 @@
+---
+title: "House Prices Prediction"
+author: "Kelompok 1"
+date: "2024-06-03"
+output: html_document
+---
+**INTRODUCTION** \
+Mintalah pembeli rumah untuk mendeskripsikan rumah impian mereka.  
+Kemungkinan besar jawaban mereka bukan, ketinggian langit-langit, ruang bawah tanah, atau seberapa dekat dengan kereta api (transportasi umum). 
+Namun, mereka cenderung mempertimbangkan harga daripada faktor lainnya.
+
+Maka dari itu melalui dataset Hotel Prices, ingin diprediksi harga setiap rumah berdasarkan fitur-fitur yang dipilih & membuat model prediksi harga rumah.
+
+
+*sumber dataset: https://www.kaggle.com/competitions/house-prices-advanced-regression-techniques*
+
+
+
+
+**ATTRIBUTE YANG DIGUNAKAN UNTUK ANALISIS** \
+SalePrice: Harga jual rumah. \
+OverallQual: Kualitas keseluruhan material dan penyelesaian rumah. \
+GrLivArea: Luas area hidup di atas tanah. \
+GarageCars: Kapasitas mobil di garasi. \
+TotalBsmtSF: Total luas basement. \
+X1stFlrSF: Luas lantai pertama. \
+FullBath: Jumlah kamar mandi. \
+YearBuilt: Tahun dibangun. \
+OverallCond: Kondisi keseluruhan rumah. \
+Utilities: Tipe utilitas yang tersedia. \
+Neighborhood: Lokasi lingkungan. \
+ExterQual: Kualitas eksterior. \
+ExterCond: Kondisi eksterior. \
+Street: Jenis jalan akses ke properti. \
+LotShape: Bentuk lot properti. \
+
+
+
+
+**PENYESUAIAN DATA** \
+Pertama-tama kita lakukan Data Preparation untuk menyiapkan data agar data dapat diolah dengan baik. \
+1. Mengubah Tipe Data:  Mengonversi variabel kategorikal menjadi tipe faktor \
+2. Menangani Nilai Hilang: \
+   - Numerik: Mengisi dengan median \
+   - Faktor: Menambahkan level eksplisit untuk nilai hilang \
+    
+##DATA PREPARATION \
+```{r, error=TRUE ,warnings=FALSE}
+# Load necessary libraries
+if (!require(tidyverse)) install.packages("tidyverse", dependencies = TRUE)
+if (!require(caret)) install.packages("caret", dependencies = TRUE)
+library(tidyverse)
+library(caret)
+
+# Read the dataset
+house_data <- read.csv("House Prices.csv")
+
+# Check the structure of the data
+str(house_data)
+
+# Convert categorical variables to factors
+categorical_vars <- c("MSSubClass", "MSZoning", "Street", "Alley", "LotShape", "LandContour", "Utilities", "LotConfig", "LandSlope", 
+                      "Neighborhood", "Condition1", "Condition2", "BldgType", "HouseStyle", "RoofStyle", "RoofMatl", "Exterior1st", 
+                      "Exterior2nd", "MasVnrType", "ExterQual", "ExterCond", "Foundation", "BsmtQual", "BsmtCond", "BsmtExposure", 
+                      "BsmtFinType1", "BsmtFinType2", "Heating", "HeatingQC", "CentralAir", "Electrical", "KitchenQual", "Functional", 
+                      "FireplaceQu", "GarageType", "GarageFinish", "GarageQual", "GarageCond", "PavedDrive", "PoolQC", "Fence", 
+                      "MiscFeature", "SaleType", "SaleCondition")
+
+house_data[categorical_vars] <- lapply(house_data[categorical_vars], as.factor)
+
+# Handle missing values
+house_data <- house_data %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), median(., na.rm = TRUE), .))) %>%
+  mutate(across(where(is.factor), ~ fct_explicit_na(.)))
+
+# Summary of the cleaned data
+summary(house_data)==
+```
+
+
+
+
+**KORELASI ANTAR VARIABLE** \
+Lakukan Explorasi Data untuk mengetahui data apa saja yang dapat digunakan sebagai bahan Analisis \
+1. Analisis Korelasi: Mengidentifikasi hubungan antara variabel numerik. \
+2. Pair Plot: Memvisualisasikan hubungan antar variabel terpilih. \
+
+
+##EDA
+```{r, error=TRUE ,warnings=FALSE}
+# Load additional libraries for visualization
+if (!require(GGally)) install.packages("GGally", dependencies = TRUE)
+if (!require(ggcorrplot)) install.packages("ggcorrplot", dependencies = TRUE)
+library(ggplot2)
+library(GGally)
+library(ggcorrplot)
+
+# Verify column names
+colnames(house_data)
+
+# Correlation matrix for numerical variables (untuk mengidentifikasi hubungan antara variabel numerik)
+numeric_vars <- house_data %>% select_if(is.numeric)
+cor_matrix <- cor(numeric_vars, use = "complete.obs")
+
+# Visualize correlation matrix
+ggcorrplot::ggcorrplot(cor_matrix, lab = TRUE, lab_size = 1, 
+                       hc.order = TRUE, type = "lower") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1),
+          axis.text.y = element_text(angle = 0, vjust = 1, hjust = 1))
+
+
+# Check for correct column names and adjust if necessary (untuk memilih dan memverifikasi nama variabel yang diinginkan untuk analisis.)
+selected_vars <- c("SalePrice", "OverallQual", "GrLivArea", "GarageCars", "TotalBsmtSF", "X1stFlrSF", "FullBath", "YearBuilt")
+corrected_vars <- intersect(selected_vars, colnames(house_data))
+
+# Pair plot for selected variables (untuk melihat hubungan berpasangan antara variabel yang dipilih.)
+if (length(corrected_vars) >= 2) {
+  ggpairs(house_data[corrected_vars]) +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+          axis.text.y = element_text(angle = 0, vjust = 1, hjust = 1))
+} else {
+  cat("Not enough correct variables for pair plot. Please check the variable names.\n")
+}
+```
+
+
+
+**ANALISIS DATA** \
+Lakukan Visualisasi untuk tiap kolom yang akan digunakan sebagai bahan analisis \
+
+```{r, error=TRUE ,warnings=FALSE}
+# Barchart for between Sale Price and Overall Quality
+house_summary <- house_data %>%
+  group_by(OverallQual) %>%
+  summarize(mean_SalePrice = mean(SalePrice, na.rm = TRUE))
+
+colors <- rainbow(nrow(house_summary))
+
+ggplot(house_summary, aes(x = OverallQual, y = mean_SalePrice)) +
+  geom_col() +
+  labs(title = "Mean Sale Price vs Overall Quality",
+       x = "Overall Quality",
+       y = "Mean Sale Price") +
+  theme_minimal() +
+ theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_manual(values = colors)
+
+# Scatter Plot for between Sale Price and Year Built
+ggplot(house_data, aes(x = YearBuilt, y = SalePrice)) +
+  geom_point() +
+  labs(title = "YearBuilt vs Overall Quality") +
+  theme_minimal()
+
+# Barchart for between Sale Price and Utilities
+aggregated_data <- aggregate(SalePrice ~ Utilities, data = house_data, mean)
+
+colors <- rainbow(nrow(aggregated_data))
+
+ggplot(aggregated_data, aes(x = Utilities, y = SalePrice)) +
+  geom_bar(stat = "identity", fill= colors) +
+  labs(title = "Utilities vs SalePrice", x = "Utilities", y = "Mean SalePrice")
+
+# Barchart for Sale Price and Neighborhood
+aggregated_data <- aggregate(SalePrice ~ Neighborhood, data = house_data, mean)
+
+ggplot(aggregated_data, aes(x = reorder(Neighborhood, -SalePrice), y = SalePrice)) +
+  geom_bar(stat = "identity", width = 0.8) +  # Adjust width of bars
+  labs(title = "Neighborhood vs SalePrice", x = "Neighborhood", y = "Mean SalePrice") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 10),  # Rotate and adjust size of text
+        plot.title = element_text(hjust = 0.5))  # Center the title
+
+
+
+# Barchart for between Sale Price and Overall Condition
+house_summary <- house_data %>%
+  group_by(OverallCond) %>%
+  summarize(mean_SalePrice = mean(SalePrice, na.rm = TRUE))
+
+colors <- rainbow(nrow(house_summary))
+
+ggplot(house_summary, aes(x = OverallCond, y = mean_SalePrice)) +
+  geom_col() +
+  labs(title = "Mean Sale Price vs Overall Condition",
+       x = "Overall Condition",
+       y = "Mean Sale Price") +
+  theme_minimal() +
+scale_fill_manual(values = colors)
+
+# Barchart for between Sale Price and Exterior Quality
+
+house_data$ExterQual <- factor(house_data$ExterQual, levels = c("Po", "Fa", "TA", "Gd", "Ex"))
+
+aggregated_data <- aggregate(SalePrice ~ ExterQual, data = house_data, mean)
+
+colors <- rainbow(nrow(aggregated_data))
+
+ggplot(aggregated_data, aes(x = ExterQual, y = SalePrice)) +
+  geom_bar(stat = "identity",fill= colors) +
+  labs(title = "ExterQual vs SalePrice", x = "ExterQual", y = "Mean SalePrice") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Barchart for between Sale Price and Exterior Condition
+house_data$ExterCond <- factor(house_data$ExterCond, levels = c("Po", "Fa", "TA", "Gd", "Ex"))
+
+aggregated_data <- aggregate(SalePrice ~ ExterCond, data = house_data, mean)
+
+colors <- rainbow(nrow(aggregated_data))
+
+ggplot(aggregated_data, aes(x = ExterCond, y = SalePrice)) +
+  geom_bar(stat = "identity",fill= colors) +
+  labs(title = "ExterCond vs SalePrice", x = "ExterCond", y = "Mean SalePrice") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Barchart for between Sale Price and General shape of property
+
+aggregated_data <- aggregate(SalePrice ~ LotShape, data = house_data, mean)
+
+colors <- rainbow(nrow(aggregated_data))
+
+ggplot(aggregated_data, aes(x = LotShape, y = SalePrice)) +
+  geom_bar(stat = "identity",fill= colors) +
+  labs(title = "LotShape vs SalePrice", x = "LotShape", y = "Mean SalePrice") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Barchart for between Sale Price and Type of road access to property
+aggregated_data <- aggregate(SalePrice ~ Street, data = house_data, mean)
+
+colors <- rainbow(nrow(aggregated_data))
+
+ggplot(aggregated_data, aes(x = Street, y = SalePrice)) +
+  geom_bar(stat = "identity",fill= colors) +
+  labs(title = "Heating vs SalePrice", x = "Street", y = "Mean SalePrice") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+Berdasarkan hasil visualisasi berbagai variable dengan variable SalePrice, dipilih variable yang paling berpengaruh: \
+1. Kualitas Keseluruhan dan Harga Jual: \
+   Kualitas keseluruhan memiliki pengaruh besar terhadap harga jual. \
+2. Tahun Dibangun dan Harga Jual: \
+   Rumah yang lebih baru cenderung lebih mahal. \
+3. Lingkungan dan Harga Jual: \
+   Lokasi lingkungan menunjukkan variasi harga jual yang signifikan. \
+
+
+
+
+
+**MODEL PREDIKSI** \
+Lakukan pembuatan Model untuk melihat faktor yang berpengaruh dengan harga jual Rumah \
+
+##Model building
+```{r, error=TRUE ,warnings=FALSE}
+# Split data into training and testing sets
+set.seed(123)
+trainIndex <- createDataPartition(house_data$SalePrice, p = 0.8, 
+                                  list = FALSE, 
+                                  times = 1)
+house_train <- house_data[ trainIndex,]
+house_test  <- house_data[-trainIndex,]
+
+#Make a linier regression model
+
+#MODEL1
+model1 <- lm(SalePrice ~ OverallQual + OverallCond + Utilities + Neighborhood + ExterQual + ExterCond + Street + LotShape,data = house_train)
+summary(model1)
+
+# Predictions on the test set
+predictions <- predict(model1, house_test)
+RMSE(predictions, house_test$SalePrice)
+
+#Make the Visualization with to compare the Actual Sale Price and Predicted SalePrice
+ggplot(house_test, aes(x = SalePrice, y = predictions)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', size = 1) +
+  labs(x = 'Actual SalePrice', y = 'Predicted SalePrice', title = 'Actual vs. Predicted SalePrice') +
+  theme_minimal()
+
+# Make the Visualization residual plot
+residuals <- house_test$SalePrice - predictions
+ggplot(house_test, aes(x = predictions, y = residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, color = 'red', size = 1) +
+  labs(x = 'Predicted SalePrice', y = 'Residuals', title = 'Residual Plot Model1') +
+  theme_minimal()
+
+feature_importance <- as.data.frame(coef(model1))
+colnames(feature_importance) <- c("Coefficient")
+feature_importance$Feature <- rownames(feature_importance)
+feature_importance <- feature_importance[-1, ]
+feature_importance <- feature_importance[order(abs(feature_importance$Coefficient), decreasing = TRUE), ]
+
+# Make bar chart of feature importance
+ggplot(feature_importance, aes(x = reorder(Feature, Coefficient), y = Coefficient)) +
+  geom_bar(stat = 'identity') +
+  labs(x = 'Features', y = 'Coefficient Value', title = 'Feature Importance in Linear Regression Model 1') +
+  coord_flip() +
+  theme_minimal()
+
+
+#MODEL2
+#Make a another model that we eliminated OverallCond and LotShape
+model2 <- lm(SalePrice ~ OverallQual + Utilities + Neighborhood + ExterQual + ExterCond + Street,data = house_train,method="qr")
+summary(model2)
+
+# Predictions on the test set
+predictions2 <- predict(model2, house_test)
+RMSE(predictions2, house_test$SalePrice)
+
+#Make the Visualization with to compare the Actual Sale Price and Predicted SalePrice
+ggplot(house_test, aes(x = SalePrice, y = predictions2)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = 'red', size = 1) +
+  labs(x = 'Actual SalePrice', y = 'Predicted SalePrice', title = 'Actual vs. Predicted SalePrice') +
+  theme_minimal()
+
+# Make the Visualization residual plot
+residuals <- house_test$SalePrice - predictions2
+ggplot(house_test, aes(x = predictions2, y = residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, color = 'red', size = 1) +
+  labs(x = 'Predicted SalePrice', y = 'Residuals', title = 'Residual Plot Model2') +
+  theme_minimal()
+
+feature_importance2 <- as.data.frame(coef(model2))
+colnames(feature_importance2) <- c("Coefficient")
+feature_importance2$Feature <- rownames(feature_importance2)
+feature_importance2 <- feature_importance[-1, ]
+feature_importance2 <- feature_importance2[order(abs(feature_importance$Coefficient), decreasing = TRUE), ]
+feature_importance2 <- feature_importance[-1, ]
+feature_importance2 <- na.omit(feature_importance2)
+
+# Make bar chart of feature importance
+ggplot(feature_importance2, aes(x = reorder(Feature, Coefficient), y = Coefficient)) +
+  geom_bar(stat = 'identity') +
+  labs(x = 'Features', y = 'Coefficient Value', title = 'Feature Importance in Linear Regression Model 2') +
+  coord_flip() +
+  theme_minimal()
+```
+
+Pada plot 'Actual vs. Predicted SalePrice',  titik-titik tampaknya menyebar di sekitar garis merah, tetapi dengan kecenderungan ke atas yang samar.  Ini menunjukkan korelasi positif yang lemah antara harga jual aktual dan harga jual yang diprediksi.  Artinya, ada sedikit kecenderungan bagi harga jual aktual menjadi lebih tinggi  daripada harga jual yang diprediksi. Namun, karena polanya lemah,  kita tidak dapat  dengan yakin mengatakan  bahwa model prediksi itu akurat.  Hal ini mungkin  bisa terjadi karena  ada faktor lain yang mempengaruhi harga jual aktual selain dari faktor-faktor yang dimasukkan ke dalam model prediksi. \
+
+Model 1 dan Model 2 menunjukkan kemampuan prediksi yang baik, dengan distribusi residual yang relatif seimbang di sekitar garis nol. \
+
+Berdasarkan feature importance, variabel Neighborhood, OverallQual, dan ExterQual menunjukkan pengaruh yang signifikan terhadap harga jual rumah dalam kedua model. \
+
+Pemilihan Model Terbaik: \
+Membandingkan RMSE (Root Mean Squared Error) dari kedua model. \
+Model dengan RMSE lebih rendah dipilih sebagai model terbaik. \
+RMSE Model 1   =  49583.86 \
+RMSE Model 2  =  49753.79 \
+
+
+
+
+
+**HASIL ANALISIS** \
+\
+1. Model 1 direkomendasikan sebagai model terbaik untuk memprediksi harga jual rumah dalam kasus ini. \
+
+2. Mengeliminasi variable tidak secara signifikan meningkatkan performa model. \
+
+3. Harga jual aktual dan yang diprediksi oleh model menunjukkan tren yang baik hal ini dapat terlihat dari sebagian besar titik data berada dekat dengan garis kesesuaian. \
+
+4. Distribusi residual relatif seimbang di sekitar garis nol, menunjukkan bahwa tidak ada pola yang jelas dalam residuals yang mengindikasikan masalah dengan model. \
+
+
+
+
+
+**KESIMPULAN** \
+Faktor-faktor utama yang mempengaruhi harga rumah: \
+
+\
+1. Kualitas Keseluruhan (OverallQual):  kualitas material dan hasil akhir rumah secara keseluruhan. \
+
+2. Kualitas Eksterior (ExterQual): kualitas bahan dan hasil akhir eksterior rumah. \
+
+3. Lingkungan (Neighborhood): Lokasi rumah sangat berpengaruh terhadap nilai jual. Lingkungan yang lebih baik cenderung memiliki harga jual yang lebih tinggi. \
+
+4. Tahun Dibangun (YearBuilt): Rumah yang dibangun lebih baru cenderung memiliki harga jual yang lebih tinggi karena kondisi yang lebih baik dan fitur yang lebih modern. \
+
+
+
+
+
+**INSIGHT** \
+\
+1. Renovasi untuk Meningkatkan Kualitas:  \
+   Fokus pada peningkatan kualitas keseluruhan dan eksterior. \
+
+2. Investasi di Lokasi Strategis:  \
+   Memilih lokasi dengan permintaan tinggi. \
+
+3. Rumah baru/Renovasi: \
+Pembangunan atau renovasi rumah untuk tampilan dan fungsionalitas yang lebih modern. \
+
+
+
+
+
+**ACTIONABLE INSIGHT** \
+1. Peningkatan kualitas:  \
+   Renovasi untuk meningkatkan kualitas rumah. \
+
+2. Pemilihan lokasi:  \
+   Investasi di lingkungan yang strategis dan populer. \
+
+3. Rumah baru atau renovasi:  \
+   Menarik pembeli dengan rumah baru atau yang telah direnovasi.\
+
+
+
+
